@@ -3,20 +3,25 @@
 // administrador. Necessário só uma vez — depois disso, novos usuários são
 // criados pelo próprio admin via POST /api/admin/users.
 //
-// Uso: npx ts-node scripts/createAdmin.ts <email> <senha> [nome]
+// Uso:  ADMIN_PASSWORD=<senha> npx ts-node scripts/createAdmin.ts <email> [nome]
+// (a senha vem da variável de ambiente para não ficar no histórico do shell
+//  nem na lista de processos; como alternativa ainda aceita como 2º argumento)
 // ============================================================
 
-import { hashPassword } from '../src/services/authService'
+import { hashPassword, normalizeEmail } from '../src/services/authService'
+import { SENHA_MIN } from '../src/api/passwordPolicy'
 import { prisma } from '../src/services/tenderService'
 
 async function main() {
-  const [email, password, name] = process.argv.slice(2)
+  const [emailArg, passwordArg, name] = process.argv.slice(2)
+  const email = emailArg ? normalizeEmail(emailArg) : undefined
+  const password = process.env.ADMIN_PASSWORD ?? passwordArg
   if (!email || !password) {
-    console.error('Uso: npx ts-node scripts/createAdmin.ts <email> <senha> [nome]')
+    console.error('Uso: ADMIN_PASSWORD=<senha> npx ts-node scripts/createAdmin.ts <email> [nome]')
     process.exit(1)
   }
-  if (password.length < 8) {
-    console.error('A senha precisa ter pelo menos 8 caracteres.')
+  if (password.length < SENHA_MIN) {
+    console.error(`A senha precisa ter pelo menos ${SENHA_MIN} caracteres.`)
     process.exit(1)
   }
 
@@ -24,7 +29,7 @@ async function main() {
 
   const user = await prisma.user.upsert({
     where: { email },
-    update: { passwordHash, isAdmin: true, active: true, accessExpiresAt: null },
+    update: { passwordHash, isAdmin: true, active: true, accessExpiresAt: null, disabledByAdmin: false },
     // Toda conta precisa de uma Company (ver schema.prisma) — o primeiro
     // admin ganha uma individual, criada junto na mesma escrita.
     create: { email, name, passwordHash, isAdmin: true, company: { create: { name: name ?? email } } },

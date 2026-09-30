@@ -12,11 +12,11 @@ import { asyncHandler, ApiError } from '../asyncHandler'
 export const companyDocumentsRouter = Router()
 
 const createSchema = z.object({
-  tipo: z.string().min(1).nullable().optional(),
-  nome: z.string().min(1),
+  tipo: z.string().min(1).max(120).nullable().optional(),
+  nome: z.string().min(1).max(200),
   dataEmissao: z.coerce.date().nullable().optional(),
   dataValidade: z.coerce.date().nullable().optional(),
-  observacao: z.string().nullable().optional(),
+  observacao: z.string().max(2000).nullable().optional(),
 })
 
 const updateSchema = createSchema.partial()

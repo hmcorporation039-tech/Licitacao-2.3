@@ -7,6 +7,12 @@
 
 import axios from 'axios'
 import { ordenarPorPrioridade } from '../lib/documentPriority'
+import { agenteDownloadSeguro, assertUrlDownloadPermitida } from '../lib/urlGuard'
+
+// Teto de tamanho do anexo baixado. Um host malicioso (ou um redirect para um
+// arquivo enorme) poderia estourar a memória do worker se a resposta fosse
+// lida inteira sem limite. 30 MB cobre com folga os editais reais.
+const MAX_DOWNLOAD_BYTES = 30 * 1024 * 1024
 
 export interface PNCPDocumentInfo {
   uri: string
@@ -32,9 +38,28 @@ export async function listPNCPDocuments(
 // editalAnalysisService.ts). User-Agent de navegador: alguns sites bloqueiam
 // cliente sem cara de browser mesmo em arquivo público sem login.
 export async function downloadPNCPDocument(uri: string): Promise<Buffer> {
-  const response = await axios.get(uri, {
+  // SSRF: só baixa de host conhecido, por https, e bloqueando qualquer IP
+  // interno — inclusive se um redirect tentar desviar pra rede privada
+  // (o bloqueio é no lookup do agente, que roda a cada hop). Ver urlGuard.ts.
+  const url = assertUrlDownloadPermitida(uri)
+  const response = await axios.get(url.toString(), {
     responseType: 'arraybuffer',
     timeout: 60_000,
+    httpsAgent: agenteDownloadSeguro,
+    maxContentLength: MAX_DOWNLOAD_BYTES,
+    maxBodyLength: MAX_DOWNLOAD_BYTES,
+    // Redirects ainda são seguidos (alguns anexos redirecionam), mas cada
+    // conexão passa pelo lookup seguro; revalidamos o host a cada salto.
+    maxRedirects: 3,
+    beforeRedirect: (options) => {
+      // Revalida o ALVO real do redirect — protocolo incluído. Um redirect que
+      // rebaixe para http:// é recusado aqui (assertUrlDownloadPermitida exige
+      // https), então nunca cai no agente http sem o guarda de IP interno.
+      const protocolo = typeof options.protocol === 'string' ? options.protocol : 'https:'
+      const destino = typeof options.hostname === 'string' ? options.hostname : ''
+      const caminho = typeof options.path === 'string' ? options.path : ''
+      assertUrlDownloadPermitida(`${protocolo}//${destino}${caminho}`)
+    },
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36',
     },

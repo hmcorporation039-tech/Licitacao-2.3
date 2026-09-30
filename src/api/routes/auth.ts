@@ -6,10 +6,16 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { prisma } from '../../services/tenderService'
-import { hashPassword, signSessionToken, verifyPassword } from '../../services/authService'
+import {
+  hashPassword,
+  normalizeEmail,
+  signSessionToken,
+  verifyPasswordConstantTime,
+} from '../../services/authService'
+import { senhaSchema } from '../passwordPolicy'
 import { asyncHandler, ApiError } from '../asyncHandler'
 import { requireAuth } from '../authMiddleware'
-import { loginLimiter } from '../rateLimit'
+import { loginLimiter, changePasswordLimiter } from '../rateLimit'
 
 export const authRouter = Router()
 
@@ -22,18 +28,22 @@ authRouter.post(
   '/login',
   loginLimiter,
   asyncHandler(async (req, res) => {
-    const { email, password } = loginSchema.parse(req.body)
+    const parsed = loginSchema.parse(req.body)
+    const email = normalizeEmail(parsed.email)
+    const { password } = parsed
 
     const user = await prisma.user.findUnique({ where: { email } })
-    // Mesma mensagem de erro pra e-mail inexistente e senha errada — não
-    // dá pra um atacante descobrir quais e-mails têm conta só tentando.
+    // Mesma mensagem de erro pra e-mail inexistente, conta sem senha e senha
+    // errada — e sempre pagando o custo de um bcrypt.compare (mesmo sem hash
+    // real), pra que nem a mensagem nem o tempo de resposta revelem quais
+    // e-mails têm conta. Ver verifyPasswordConstantTime.
     const invalid = () => new ApiError(401, 'E-mail ou senha inválidos')
 
-    if (!user || !user.active) throw invalid()
-    if (!user.passwordHash) {
-      throw new ApiError(403, 'Esta conta ainda não tem senha definida — fale com o administrador')
-    }
-    if (!(await verifyPassword(password, user.passwordHash))) throw invalid()
+    const senhaConfere = await verifyPasswordConstantTime(
+      password,
+      user && user.active ? user.passwordHash : null
+    )
+    if (!user || !user.active || !senhaConfere) throw invalid()
     if (user.accessExpiresAt && user.accessExpiresAt.getTime() < Date.now()) {
       throw new ApiError(403, 'O acesso desta conta expirou — fale com o administrador')
     }
@@ -48,17 +58,18 @@ authRouter.post(
 
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
-  newPassword: z.string().min(8, 'A nova senha precisa ter pelo menos 8 caracteres'),
+  newPassword: senhaSchema,
 })
 
 authRouter.post(
   '/change-password',
   requireAuth,
+  changePasswordLimiter,
   asyncHandler(async (req, res) => {
     const { currentPassword, newPassword } = changePasswordSchema.parse(req.body)
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: req.userId! } })
-    if (!user.passwordHash || !(await verifyPassword(currentPassword, user.passwordHash))) {
+    if (!(await verifyPasswordConstantTime(currentPassword, user.passwordHash))) {
       throw new ApiError(401, 'Senha atual incorreta')
     }
 
@@ -70,6 +81,22 @@ authRouter.post(
     })
 
     res.json({ token: signSessionToken(atualizado.id, atualizado.tokenVersion) })
+  })
+)
+
+// Logout de verdade: incrementa o tokenVersion, o que invalida no servidor
+// TODOS os tokens já emitidos para esta conta (o authMiddleware confere o
+// tokenVersion do token contra o do banco). Sem isto, "sair" só apagava o
+// token do navegador e um token copiado antes seguia valendo até expirar.
+authRouter.post(
+  '/logout',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    await prisma.user.update({
+      where: { id: req.userId! },
+      data: { tokenVersion: { increment: 1 } },
+    })
+    res.status(204).end()
   })
 )
 

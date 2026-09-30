@@ -12,6 +12,7 @@ import { analiseHabilitada } from '../../services/editalAnalysisService'
 import { analiseQueue } from '../../queues'
 import { enfileirarSemTravar } from '../../queues/enfileirar'
 import { fetchPNCPItens } from '../../services/pncpItemsService'
+import { MODALIDADE_VALUES } from './monitoredItems'
 import { normalize } from '../../lib/geoService'
 import { buildAutoMilestones, PlanMilestone } from '../../lib/participationPlanTemplate'
 
@@ -21,15 +22,15 @@ const SITUACAO_VALUES = ['ABERTA', 'ENCERRADA', 'SUSPENSA', 'CANCELADA', 'ANULAD
 
 const querySchema = z.object({
   uf: z.string().length(2).optional(),
-  modalidade: z.string().optional(),
+  modalidade: z.enum(MODALIDADE_VALUES).optional(),
   situacao: z.enum(SITUACAO_VALUES).optional(),
-  orgao: z.string().trim().min(1).optional(),
-  municipio: z.string().trim().min(1).optional(),
+  orgao: z.string().trim().min(1).max(200).optional(),
+  municipio: z.string().trim().min(1).max(200).optional(),
   // "Nº edital" no estilo BLL — busca pelo número de controle do PNCP/ComprasNet
-  numero: z.string().trim().min(1).optional(),
+  numero: z.string().trim().min(1).max(100).optional(),
   publicacaoInicio: z.coerce.date().optional(),
   publicacaoFim: z.coerce.date().optional(),
-  q: z.string().trim().min(1).optional(),
+  q: z.string().trim().min(1).max(200).optional(),
   // Quando true, restringe o feed às licitações que deram match com algum
   // item monitorado do usuário logado (em vez do feed público completo) —
   // o cruzamento em si é feito pelo matcher (casamento literal de palavra-
@@ -270,7 +271,10 @@ tendersRouter.post(
       throw new ApiError(503, 'A análise de edital por IA está desligada nesta instalação')
     }
 
-    const force = req.query.force === 'true'
+    // Reanálise forçada sobrescreve a análise que TODAS as empresas veem e
+    // gasta crédito de IA — por isso só admin pode forçar. Usuário comum
+    // recebe a análise já existente (ou dispara a primeira, se não houver).
+    const force = req.query.force === 'true' && req.isAdmin === true
     const existing = await prisma.tenderAnalysis.findUnique({ where: { tenderId: req.params.id } })
 
     if (!force) {

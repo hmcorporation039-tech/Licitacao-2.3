@@ -15,6 +15,7 @@ import {
 } from '@/lib/types'
 import { MODALIDADE_OPTIONS } from '@/lib/modalidades'
 import { SITUACAO_OPTIONS } from '@/lib/situacoes'
+import { safeHttpUrl } from '@/lib/safeUrl'
 
 // Documento válido (não vencido) do cofre da empresa, indexado por tipo —
 // pra marcar automaticamente os itens do checklist que a empresa já tem.
@@ -355,10 +356,11 @@ export default function TenderDetailPage({ params }: { params: Promise<{ id: str
                 <InfoField label="Abertura" value={formatData(tender.aberturaAt)} />
               </div>
 
-              {tender.linkEdital && (
+              {safeHttpUrl(tender.linkEdital) && (
                 <a
-                  href={tender.linkEdital}
+                  href={safeHttpUrl(tender.linkEdital)!}
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="mt-4 inline-block text-sm text-indigo-700 hover:underline"
                 >
                   Ver edital original

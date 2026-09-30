@@ -101,12 +101,12 @@ export default defineConfig({
     },
   },
   env: {
-    // Admin DEDICADO aos testes (não é a conta real do administrador —
-    // trocar a senha do admin de verdade não deveria nunca quebrar o
-    // suite, e vice-versa). Criado/renovado com:
-    //   npx ts-node scripts/createAdmin.ts cypress-admin@example.com CypressAdminFixo123 "Cypress Admin"
-    // Sobrescreva com CYPRESS_ADMIN_EMAIL/CYPRESS_ADMIN_PASSWORD se preferir outra conta.
-    ADMIN_EMAIL: 'cypress-admin@example.com',
-    ADMIN_PASSWORD: 'CypressAdminFixo123',
+    // Admin DEDICADO aos testes (não é a conta real do administrador). As
+    // credenciais vêm do ambiente (CYPRESS_ADMIN_EMAIL / CYPRESS_ADMIN_PASSWORD);
+    // o valor abaixo é só um fallback para rodar localmente e NUNCA deve existir
+    // como conta em produção. Crie a conta de teste só no banco de teste:
+    //   ADMIN_PASSWORD=<senha> npx ts-node scripts/createAdmin.ts cypress-admin@example.com "Cypress Admin"
+    ADMIN_EMAIL: process.env.CYPRESS_ADMIN_EMAIL ?? 'cypress-admin@example.com',
+    ADMIN_PASSWORD: process.env.CYPRESS_ADMIN_PASSWORD ?? 'CypressAdminLocal#2026',
   },
 })

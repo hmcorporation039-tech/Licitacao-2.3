@@ -10,6 +10,7 @@ import {
   EditalDocumento,
   SYSTEM_PROMPT,
   buildInstrucao,
+  validarResultadoAnalise,
 } from './types'
 
 let anthropicClient: Anthropic | null = null
@@ -73,5 +74,5 @@ export async function analyzeEdital(
     throw new Error('Resposta do modelo não contém o resultado esperado')
   }
 
-  return JSON.parse(textBlock.text) as EditalAnalysisResult
+  return validarResultadoAnalise(JSON.parse(textBlock.text))
 }

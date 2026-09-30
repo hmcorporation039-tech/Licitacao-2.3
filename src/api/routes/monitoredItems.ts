@@ -30,23 +30,30 @@ export const MODALIDADE_VALUES = [
   'OUTROS',
 ] as const
 
+// Tetos de tamanho: sem eles um único item podia chegar com dezenas de
+// milhares de palavras-chave (cada uma vira uma regex avaliada no rematch de
+// 90 dias) ou strings enormes — custo de CPU/memória desproporcional. Os
+// limites são bem acima de qualquer uso real.
+const MAX_ITENS_LISTA = 200
+const MAX_TAM_TERMO = 120
+
 const createSchema = z.object({
-  name: z.string().min(1),
-  keywords: z.array(z.string().min(1)).default([]),
-  catmatCodes: z.array(z.string()).default([]),
-  catserCodes: z.array(z.string()).default([]),
-  ufs: z.array(z.string().length(2)).default([]),
+  name: z.string().min(1).max(200),
+  keywords: z.array(z.string().min(1).max(MAX_TAM_TERMO)).max(MAX_ITENS_LISTA).default([]),
+  catmatCodes: z.array(z.string().max(MAX_TAM_TERMO)).max(MAX_ITENS_LISTA).default([]),
+  catserCodes: z.array(z.string().max(MAX_TAM_TERMO)).max(MAX_ITENS_LISTA).default([]),
+  ufs: z.array(z.string().length(2)).max(27).default([]),
   valorMin: z.number().nonnegative().nullable().optional(),
   valorMax: z.number().nonnegative().nullable().optional(),
-  modalidades: z.array(z.enum(MODALIDADE_VALUES)).default([]),
+  modalidades: z.array(z.enum(MODALIDADE_VALUES)).max(MODALIDADE_VALUES.length).default([]),
   // Filtro por órgão — nome específico ou trecho (categoria, ex: "PREFEITURA")
-  orgaos: z.array(z.string().min(1)).default([]),
+  orgaos: z.array(z.string().min(1).max(MAX_TAM_TERMO)).max(MAX_ITENS_LISTA).default([]),
   // Filtro por código UASG — só bate com licitações do ComprasNet (ver
   // uasgMatches em matcherService.ts). Selecionado via busca em /api/uasg/search.
-  uasgCodes: z.array(z.string().min(1)).default([]),
+  uasgCodes: z.array(z.string().min(1).max(MAX_TAM_TERMO)).max(MAX_ITENS_LISTA).default([]),
   // Filtro por raio de distância — alternativa ao filtro por UF
   raioKm: z.number().int().positive().nullable().optional(),
-  origemMunicipio: z.string().min(1).nullable().optional(),
+  origemMunicipio: z.string().min(1).max(200).nullable().optional(),
   origemUf: z.string().length(2).nullable().optional(),
 })
 

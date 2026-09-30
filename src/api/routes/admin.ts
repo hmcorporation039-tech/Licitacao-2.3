@@ -8,7 +8,8 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { prisma } from '../../services/tenderService'
-import { generateTempPassword, hashPassword } from '../../services/authService'
+import { generateTempPassword, hashPassword, normalizeEmail } from '../../services/authService'
+import { senhaSchema } from '../passwordPolicy'
 import { asyncHandler, ApiError } from '../asyncHandler'
 import { requireAdmin, requireAuth } from '../authMiddleware'
 import { escritaSensivelLimiter } from '../rateLimit'
@@ -23,8 +24,8 @@ function computeExpiresAt(diasValidade: number | null | undefined): Date | null 
 
 const createUserSchema = z.object({
   email: z.string().email(),
-  name: z.string().min(1).optional(),
-  password: z.string().min(8).optional(), // se ausente, gera uma temporária
+  name: z.string().min(1).max(200).optional(),
+  password: senhaSchema.optional(), // se ausente, gera uma temporária
   isAdmin: z.boolean().default(false),
   diasValidade: z.number().int().positive().nullable().optional(), // null/ausente = acesso sem prazo
 })
@@ -34,15 +35,16 @@ adminRouter.post(
   escritaSensivelLimiter,
   asyncHandler(async (req, res) => {
     const body = createUserSchema.parse(req.body)
+    const email = normalizeEmail(body.email)
 
-    const existing = await prisma.user.findUnique({ where: { email: body.email } })
+    const existing = await prisma.user.findUnique({ where: { email } })
     if (existing) throw new ApiError(409, 'Já existe um usuário com este e-mail')
 
     const tempPassword = body.password ?? generateTempPassword()
 
     const user = await prisma.user.create({
       data: {
-        email: body.email,
+        email,
         name: body.name,
         passwordHash: await hashPassword(tempPassword),
         isAdmin: body.isAdmin,
@@ -119,12 +121,17 @@ adminRouter.patch(
       isAdmin?: boolean
       accessExpiresAt?: Date | null
       tokenVersion?: { increment: number }
+      disabledByAdmin?: boolean
     } = {}
     if (body.active !== undefined) {
       data.active = body.active
       // Desativar precisa derrubar a sessão em curso, não só impedir o próximo
       // login — o token de 30 dias sobreviveria até expirar sozinho.
       if (!body.active) data.tokenVersion = { increment: 1 }
+      // Marca/limpa a trava de "desativado pelo admin": enquanto ligada, o
+      // dono da empresa não consegue reativar a conta (só o admin) — ver
+      // company.ts. Reativar pelo admin libera a conta de novo.
+      data.disabledByAdmin = !body.active
     }
     if (body.isAdmin !== undefined) data.isAdmin = body.isAdmin
     if (body.diasValidade !== undefined) data.accessExpiresAt = computeExpiresAt(body.diasValidade)
@@ -142,7 +149,7 @@ adminRouter.patch(
 )
 
 const resetPasswordSchema = z.object({
-  password: z.string().min(8).optional(), // se ausente, gera uma temporária
+  password: senhaSchema.optional(), // se ausente, gera uma temporária
 })
 
 adminRouter.post(

@@ -207,11 +207,13 @@ export async function runEditalAnalysis(tenderId: string): Promise<void> {
     // frequência, fora do nosso controle — em vez do axios "Request failed
     // with status code 503" cru, mostra algo que a pessoa usuária entenda.
     const isFonteFora = axios.isAxiosError(err) && (!err.response || err.response.status >= 500)
+    // O detalhe do erro (mensagem do axios, host/porta interna, stack do SDK)
+    // fica só no log do servidor — nunca em errorMsg, que qualquer usuário lê
+    // em GET /:id/analysis. Ao usuário vai só uma mensagem genérica.
+    console.error(`[Análise de edital] Falha ao analisar ${tenderId}:`, err instanceof Error ? err.message : err)
     const errorMsg = isFonteFora
       ? 'A fonte de origem está indisponível no momento (não foi possível baixar os documentos do edital). Tente novamente mais tarde.'
-      : err instanceof Error
-        ? err.message
-        : String(err)
+      : 'Não foi possível concluir a análise deste edital. Tente novamente mais tarde.'
     await prisma.tenderAnalysis.update({
       where: { tenderId },
       data: { status: 'FAILED', errorMsg },

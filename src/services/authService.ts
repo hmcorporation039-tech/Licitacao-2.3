@@ -6,6 +6,7 @@
 
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import { randomInt } from 'node:crypto'
 
 const SALT_ROUNDS = 10
 // Validade do token de SESSÃO (login) — diferente da validade da CONTA
@@ -24,6 +25,33 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash)
+}
+
+// Hash fixo de uma senha que ninguém usa. Serve para gastar o mesmo tempo de
+// bcrypt.compare quando o e-mail não existe (ou a conta não tem senha), de
+// modo que o tempo de resposta do login não revele se a conta existe — ver
+// verifyPasswordConstantTime e o uso em routes/auth.ts.
+const DUMMY_HASH = bcrypt.hashSync('conta-inexistente-placeholder', SALT_ROUNDS)
+
+// Compara a senha sempre pagando o custo de um bcrypt.compare, mesmo quando
+// não há hash real (usuário inexistente/sem senha). Retorna sempre false
+// nesses casos, mas em tempo equivalente ao de uma senha errada real.
+export async function verifyPasswordConstantTime(
+  password: string,
+  hash: string | null | undefined
+): Promise<boolean> {
+  if (!hash) {
+    await bcrypt.compare(password, DUMMY_HASH)
+    return false
+  }
+  return bcrypt.compare(password, hash)
+}
+
+// E-mail é identificador de conta: normaliza para não haver duas contas que só
+// diferem em maiúsculas/minúsculas ou espaços (e para o login não depender de
+// como o usuário digitou). Aplicado tanto na criação quanto no login.
+export function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase()
 }
 
 export interface SessionTokenPayload {
@@ -58,9 +86,11 @@ export function verifySessionToken(token: string): SessionTokenPayload | null {
 // quando ele não define uma senha específica).
 export function generateTempPassword(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  // randomInt (CSPRNG) em vez de Math.random: a senha temporária não pode ser
+  // previsível a partir do estado do gerador pseudoaleatório.
   let out = ''
-  for (let i = 0; i < 12; i++) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)]
+  for (let i = 0; i < 16; i++) {
+    out += alphabet[randomInt(alphabet.length)]
   }
   return out
 }

@@ -9,7 +9,8 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { prisma } from '../../services/tenderService'
-import { generateTempPassword, hashPassword } from '../../services/authService'
+import { generateTempPassword, hashPassword, normalizeEmail } from '../../services/authService'
+import { senhaSchema } from '../passwordPolicy'
 import { asyncHandler, ApiError } from '../asyncHandler'
 import { requireCompanyOwner } from '../authMiddleware'
 import { escritaSensivelLimiter } from '../rateLimit'
@@ -56,8 +57,8 @@ companyRouter.patch(
 
 const createMemberSchema = z.object({
   email: z.string().email(),
-  name: z.string().min(1).optional(),
-  password: z.string().min(8).optional(), // se ausente, gera uma temporária
+  name: z.string().min(1).max(200).optional(),
+  password: senhaSchema.optional(), // se ausente, gera uma temporária
 })
 
 companyRouter.post(
@@ -66,19 +67,34 @@ companyRouter.post(
   escritaSensivelLimiter,
   asyncHandler(async (req, res) => {
     const body = createMemberSchema.parse(req.body)
+    const email = normalizeEmail(body.email)
 
-    const existing = await prisma.user.findUnique({ where: { email: body.email } })
-    if (existing) throw new ApiError(409, 'Já existe um usuário com este e-mail')
+    // Mensagem neutra: um dono de empresa não deve conseguir descobrir, pelo
+    // texto do erro, que um e-mail já tem conta em OUTRA empresa. Continua
+    // sendo 409 (o e-mail não pôde ser usado), mas sem confirmar a existência.
+    const existing = await prisma.user.findUnique({ where: { email } })
+    if (existing) {
+      throw new ApiError(409, 'Não foi possível convidar este e-mail. Fale com o administrador.')
+    }
 
     const tempPassword = body.password ?? generateTempPassword()
 
+    // Membro novo herda o prazo de acesso da empresa (accessExpiresAt do dono),
+    // em vez de nascer com acesso indeterminado enquanto a conta da empresa é
+    // por prazo — senão um convidado "furava" a validade do plano.
+    const owner = await prisma.user.findUnique({
+      where: { id: req.userId! },
+      select: { accessExpiresAt: true },
+    })
+
     const member = await prisma.user.create({
       data: {
-        email: body.email,
+        email,
         name: body.name,
         passwordHash: await hashPassword(tempPassword),
         companyId: req.companyId!,
         companyRole: 'MEMBER',
+        accessExpiresAt: owner?.accessExpiresAt ?? null,
       },
     })
 
@@ -122,6 +138,12 @@ companyRouter.patch(
   asyncHandler(async (req, res) => {
     const membro = await assertMembroDaEmpresa(req.params.id, req.companyId!)
     const body = updateMemberSchema.parse(req.body)
+
+    // Conta travada pelo admin da plataforma só o admin reativa — o dono da
+    // empresa não pode reabrir um acesso que o admin bloqueou de propósito.
+    if (body.active === true && membro.disabledByAdmin) {
+      throw new ApiError(403, 'Esta conta foi desativada pelo administrador — só ele pode reativá-la')
+    }
 
     if (membro.id === req.userId && (body.companyRole === 'MEMBER' || body.active === false)) {
       await assertNaoEhUltimoOwner(req.companyId!, membro.id)

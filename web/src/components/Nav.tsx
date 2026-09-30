@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { clearSessionUser, getSessionUser, SessionUser } from '@/lib/session'
+import { api } from '@/lib/api'
 
 const LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
@@ -54,7 +55,16 @@ export default function Nav() {
                 {user.email}
               </Link>
               <button
-                onClick={() => {
+                onClick={async () => {
+                  // Invalida o token no servidor (incrementa o tokenVersion),
+                  // não só no navegador — assim um token copiado antes de sair
+                  // para de valer na hora. Best-effort: se a chamada falhar,
+                  // ainda limpamos a sessão local e mandamos pro login.
+                  try {
+                    await api.post('/api/auth/logout')
+                  } catch {
+                    // ignora — segue com a limpeza local
+                  }
                   clearSessionUser()
                   router.push('/login')
                 }}

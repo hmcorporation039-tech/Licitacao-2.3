@@ -12,6 +12,7 @@ import {
   EditalDocumento,
   SYSTEM_PROMPT,
   buildInstrucao,
+  validarResultadoAnalise,
 } from './types'
 
 let client: GoogleGenAI | null = null
@@ -55,5 +56,5 @@ export async function analyzeEdital(
     throw new Error('Resposta do modelo não contém o resultado esperado')
   }
 
-  return JSON.parse(response.text) as EditalAnalysisResult
+  return validarResultadoAnalise(JSON.parse(response.text))
 }

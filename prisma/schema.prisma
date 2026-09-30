@@ -34,6 +34,11 @@ model User {
   // e e conferido no authMiddleware, para que a sessao de 30 dias possa ser
   // revogada na hora em vez de sobreviver ate expirar sozinha.
   tokenVersion Int   @default(0) @map("token_version")
+  // Marcado quando quem desativa a conta é o admin da plataforma (não o dono
+  // da empresa). Enquanto true, o dono da empresa NÃO consegue reativar o
+  // usuário — só o admin. Sem isto, o dono reativava alguém que o admin havia
+  // bloqueado (ex.: conta de teste que abusou do sistema).
+  disabledByAdmin Boolean @default(false) @map("disabled_by_admin")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
