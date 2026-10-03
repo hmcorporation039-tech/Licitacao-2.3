@@ -5,12 +5,22 @@
 // esses testes acusem antes da coleta em produção quebrar silenciosamente.
 // ============================================================
 
-import { describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { parseNovacapListagem } from '../src/services/novacapParser'
 import { parseFiegListagem, extrairTotalPaginas } from '../src/services/fiegParser'
 import { parseSescGoListagem } from '../src/services/sescGoParser'
 
 describe('parseNovacapListagem', () => {
+  const DATA_DA_CAPTURA_DO_HTML = new Date('2026-09-28T12:00:00-03:00')
+
+  beforeAll(() => {
+    vi.useFakeTimers({ now: DATA_DA_CAPTURA_DO_HTML, toFake: ['Date'] })
+  })
+
+  afterAll(() => {
+    vi.useRealTimers()
+  })
+
   const html = `
     <table id="tblicita">
       <tbody>
