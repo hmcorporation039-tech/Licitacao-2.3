@@ -90,7 +90,7 @@ async function importarUsuarios(origem: Client, destino: Client): Promise<Map<st
     if (EMAILS_IGNORADOS.has(usuario.email)) continue
 
     const existente = await destino.query<{ id: string; company_id: string }>(
-      `SELECT id, company_id FROM users WHERE email = $1`,
+      `SELECT id, company_id FROM users WHERE email = lower(trim($1))`,
       [usuario.email]
     )
     if (existente.rows[0]) {
@@ -111,6 +111,7 @@ async function importarUsuarios(origem: Client, destino: Client): Promise<Map<st
     registrar('companies', true)
 
     const inserido = await inserirNoDestino(destino, 'users', usuario.dados, {
+      email: usuario.email.trim().toLowerCase(),
       company_id: companyId,
       company_role: 'OWNER',
     })
