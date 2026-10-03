@@ -1,6 +1,8 @@
 # Plataforma de Monitoramento de Licitações
 
-Monitora licitações vigentes do **PNCP** e **ComprasNet** por itens previamente cadastrados, cruza com um cofre de documentos da empresa, analisa editais por IA e organiza um plano de participação por licitação.
+Monitora licitações vigentes do **PNCP**, **ComprasNet**, **NOVACAP**, **FIEG**, **SESC GO** e **SEST SENAT** por itens previamente cadastrados, cruza com um cofre de documentos da empresa, analisa editais por IA e organiza um plano de participação por licitação.
+
+Versão **2.3**: toda conta pertence a uma **empresa** (multiusuário, com dono e membros). Itens monitorados, matches, cofre de documentos, checklists e planos são da empresa e ficam compartilhados entre os membros.
 
 ---
 
@@ -71,11 +73,13 @@ npm run db:migrate:deploy # aplica as migrations (cria as tabelas)
 
 ## 5. Criar o primeiro usuário administrador
 
-Não existe autocadastro aberto — o primeiro admin é criado direto no banco, e ele cria os demais usuários pela tela "Usuários" (ou via `POST /api/admin/users`):
+Não existe autocadastro aberto — o primeiro admin é criado direto no banco, e ele cria os demais usuários pela tela "Usuários" (ou via `POST /api/admin/users`). A senha vai por variável de ambiente, para não ficar no histórico do terminal, e precisa ter de 10 a 72 caracteres:
 
 ```bash
-npx ts-node scripts/createAdmin.ts seu-email@empresa.com "sua-senha-com-8+caracteres" "Seu Nome"
+ADMIN_PASSWORD="sua-senha-com-10+caracteres" npx ts-node scripts/createAdmin.ts seu-email@empresa.com "Seu Nome"
 ```
+
+O mesmo comando redefine a senha de um admin que já existe (o e-mail é normalizado para minúsculas). Para os demais usuários, use **Admin → Usuários → redefinir senha**, que gera uma senha temporária.
 
 ---
 
@@ -133,6 +137,8 @@ Usa o admin criado no passo 5 (configure `CYPRESS_ADMIN_EMAIL`/`CYPRESS_ADMIN_PA
 | `npm run rawjson:enxugar` | Backfill: reescreve o `raw_json` das licitações já coletadas, guardando só o que é lido |
 | `npm run tenders:backfill-norm` | Preenche colunas normalizadas pra busca sem acento |
 | `npm run documentos:check-expirations` | Dispara avisos de documento vencendo |
+| `npm run empresas:backfill` | Cria uma empresa por usuário sem empresa e propaga `company_id` (usado entre as migrations 0004/0006 e 0005/0007) |
+| `npm run clientes:importar-v22` | Copia os clientes de um banco da V2.2 para o banco da 2.3 (ver seção abaixo) |
 
 > `tenders:cleanup` e `rawjson:enxugar` apagam/reescrevem dados. Quando a
 > `DATABASE_URL` não é local, os dois param e pedem que você digite o host do
@@ -150,7 +156,7 @@ licitacao-platform/
 ├── scripts/                    ← Scripts operacionais (rodados sob demanda)
 ├── src/
 │   ├── api/
-│   │   ├── routes/              ← auth, admin, tenders, monitored-items, matches, company-documents, dashboard
+│   │   ├── routes/              ← auth, admin, company, tenders, monitored-items, matches, company-documents, participation-plans, dashboard, uasg
 │   │   └── authMiddleware.ts    ← requireAuth / requireAdmin
 │   ├── lib/                     ← geoService, checklistTemplate, participationPlanTemplate
 │   ├── queues/                  ← BullMQ + Redis
@@ -176,6 +182,10 @@ licitacao-platform/
 | PNCP | `https://pncp.gov.br/api/consulta` | Pública |
 | ComprasNet | `https://dadosabertos.compras.gov.br` | Pública |
 | CATMAT/CATSER | `https://compras.dados.gov.br` | Pública |
+| NOVACAP | `https://app.novacap.df.gov.br` | Pública (HTML) |
+| FIEG | `https://www.fieg.com.br/licitacao/site/` | Pública (HTML) |
+| SESC GO | `https://www3.sescgo.com.br` | Pública (HTML) |
+| SEST SENAT | `https://transparencia.sestsenat.org.br` | Pública |
 
 ---
 
@@ -192,8 +202,34 @@ licitacao-platform/
 
 | Peça | Onde |
 |---|---|
-| API + workers | Railway — `api-production-1fb4.up.railway.app` |
-| Frontend | Vercel — `licita-o-lac.vercel.app` |
-| Banco | Railway Postgres |
-| Filas | Upstash Redis |
+| API + workers | Railway, projeto `licitacoes-platform-clone` — `api-production-c6d4f.up.railway.app` (os dois serviços rodam a branch `main`; `SERVICE_ROLE` decide qual metade sobe) |
+| Frontend | Vercel, projeto `licitacao-2-3` — `licitacao-2-3.vercel.app` (Root Directory `web`, preset Next.js, Node 22) |
+| Banco | Railway Postgres 18 do mesmo projeto, ligado aos serviços por referência `${{Postgres.DATABASE_URL}}` |
+| Filas | Redis do `REDIS_URL` dos serviços |
+
+Configuração dos serviços de código no Railway:
+
+| Campo | Valor |
+|---|---|
+| Pre-deploy Command | `npm run db:migrate:deploy` (só na API e nos workers, **nunca** no Postgres) |
+| Healthcheck Path | `/api/health` |
+| `CORS_ORIGINS` (API) | inclui `https://licitacao-2-3.vercel.app` |
+
+### Migração dos clientes da V2.2 (03/10/2026)
+
+Os clientes que usavam a V2.2 (banco próprio, sem empresas) foram copiados para o banco da 2.3 com `npm run clientes:importar-v22`. O script lê a origem em sessão somente leitura e grava no destino numa transação única; com `--dry` desfaz tudo no final. Pode rodar mais de uma vez: o que já existe no destino é ignorado.
+
+```bash
+ORIGEM_DATABASE_URL="postgresql://...v22" DESTINO_DATABASE_URL="postgresql://...v23" npm run clientes:importar-v22 -- --dry
+ORIGEM_DATABASE_URL="postgresql://...v22" DESTINO_DATABASE_URL="postgresql://...v23" npm run clientes:importar-v22
+```
+
+O que ele faz:
+
+- cria uma empresa própria por usuário e copia o usuário com o mesmo hash de senha (a senha não muda);
+- copia itens monitorados, matches, checklists, planos, documentos e análises de IA;
+- traz as licitações (e os itens delas) que faltarem no destino, casando pela chave `fonte_id`;
+- ignora a conta de teste do Cypress e não copia notificações.
+
+Antes de rodar contra produção, faça backup dos dois bancos (`pg_dump -Fc`, mesma versão major do servidor) e ensaie numa cópia local restaurada.
 

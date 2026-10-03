@@ -115,6 +115,54 @@ Ver o cabeçalho de `scripts/enxugarRawJson.ts`.
 
 ---
 
+## v2.3 — Empresas, novas fontes e segurança
+
+### Etapa 1 — Empresa multiusuário
+
+| Item | Status |
+|---|---|
+| 1a: tabela `companies`, `company_id` em usuários, itens, documentos, checklists e planos (migrations 0004/0005 + `empresas:backfill`) | ✅ |
+| 1a: `companyId` vira a chave de autorização; checklist e plano passam a ser um por (empresa, licitação) | ✅ |
+| 1b: convite de colega (dono/membro) e matches compartilhados pela empresa (migrations 0006/0007) | ✅ |
+| Dados de contato e cobrança da empresa (migration 0011) — preparação para pagamentos | ✅ |
+| Abas Empresa e Documentos unificadas; troca de senha de usuário pelo admin | ✅ |
+
+### Etapa 5 — Novas fontes de coleta
+
+| Fonte | Status |
+|---|---|
+| NOVACAP, FIEG e SESC GO (consulta pública, sem login/CAPTCHA — migration 0008) | ✅ |
+| SEST SENAT (migration 0009) | ✅ |
+| Licitação encerrada/executada não entra em nenhuma fonte | ✅ |
+| Conclusão de dispensa/inexigibilidade via `valor_homologado` e flag `srp` do PNCP (migration 0010) | ✅ |
+| Análise de edital por IA generalizada além do PNCP | ✅ |
+
+### Segurança
+
+| Item | Status |
+|---|---|
+| Correção do RCE não autenticado do Next.js (GHSA-2xp9-vwfh-vxw4), rate limit nas rotas sensíveis, headers e tratamento de erro da API, `npm audit fix` | ✅ |
+| Endurecimento do pentest de 30/09 (PR #1): login em tempo constante e sem enumeração, e-mail normalizado, `disabled_by_admin` (migration 0012), guarda de SSRF nos anexos, prompt de IA tratando edital como dado, logout no servidor, CSP, política de senha 10–72 | ✅ |
+| `axios` 1.19.0 → 1.20.0 (avisos de severidade alta do `npm audit`) | ✅ |
+
+### Entrada em produção (03/10/2026)
+
+| Item | Status |
+|---|---|
+| Frontend publicado na Vercel (`licitacao-2-3.vercel.app`) apontando para a API `api-production-c6d4f` | ✅ |
+| API e workers do Railway na branch `main`; healthcheck em `/api/health` | ✅ |
+| Clientes da V2.2 copiados para o banco da 2.3 (`clientes:importar-v22`): 3 contas, 4 itens, 21 matches, 49 checklists, 14 planos, 23 análises de IA, 50 licitações. Backup dos dois bancos antes da cópia | ✅ |
+| E-mails normalizados para minúsculas no banco de produção | ✅ |
+| Teste de ponta a ponta no navegador (cópia do banco de produção): login e todas as telas para os 4 clientes, sem erro | ✅ |
+| Texto invisível com o sistema em modo escuro: tema claro fixo no frontend (PR #2) | ✅ |
+| Login real dos clientes na 2.3 | 🟡 marciohector.06 ✅ · Alexandre e Almeida pendentes |
+| Desligar e remover a V2.2 (projeto `Licitacoes-Platform`, banco `altaria`) | ⬜ |
+| Trocar a senha do Postgres de produção da 2.3 (exposta durante a migração) | ⬜ |
+
+**Atenção:** o banco de produção da 2.3 já tem as migrations 0013–0015 da 2.4, aplicadas quando a API rodou o código da 2.4. São aditivas e não afetam a 2.3, mas os workers da 2.4 **não** podem apontar para este banco: a 2.3 não conhece o valor `SESC_REGIONAL` e quebraria ao ler essas licitações.
+
+---
+
 ## Próximas fases (não iniciadas)
 
 | Fase | Escopo | Status |
@@ -123,7 +171,7 @@ Ver o cabeçalho de `scripts/enxugarRawJson.ts`.
 | F2 | Análise automática em lote via Batch API (metade do custo por token) | ⬜ |
 | F3 | Resultado, atas e contratos do PNCP; histórico de preço por objeto; perfil de concorrente | ⬜ |
 | F3 | Funil de participação com taxa de conversão por item monitorado | ⬜ |
-| F4 | Empresa como entidade (cofre e itens compartilhados pelo time) | ⬜ |
+| F4 | Empresa como entidade (cofre e itens compartilhados pelo time) | ✅ entregue na v2.3 |
 | F4 | Resumo diário por e-mail, alerta por WhatsApp, exportação em PDF, planos e limites | ⬜ |
 
 ---
